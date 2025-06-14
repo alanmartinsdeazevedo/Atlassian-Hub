@@ -23,6 +23,9 @@ model User {
 
   Log           Log[]
   AtlassianLog  AtlassianLog[]
+  
+  CreatedAtlassianGroups  AtlassianGroup[] @relation("AtlassianGroupCreator")
+  UpdatedAtlassianGroups  AtlassianGroup[] @relation("AtlassianGroupUpdater")
 }
 
 model Role {
@@ -95,9 +98,14 @@ model AtlassianGroup {
   is_active   Boolean  @default(true)
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
+  created_by  String?  @db.Uuid
+  updated_by  String?  @db.Uuid
 
   users       AtlassianGroupUser[]
   logs        AtlassianLog[]
+  
+  creator     User?    @relation("AtlassianGroupCreator", fields: [created_by], references: [id], onDelete: SetNull)
+  updater     User?    @relation("AtlassianGroupUpdater", fields: [updated_by], references: [id], onDelete: SetNull)
 
   @@map("atlassian_groups")
 }

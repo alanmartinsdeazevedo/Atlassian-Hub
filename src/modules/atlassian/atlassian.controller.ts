@@ -10,29 +10,158 @@ import {
   HttpStatus,
   HttpException,
   Req,
+  ValidationPipe,
+  UsePipes,
 } from "@nestjs/common";
 import { Request } from "express";
 import { AtlassianService } from "./atlassian.service";
-
-interface CreateGroupDto {
-  group_id: string;
-  group_name: string;
-  description?: string;
-  order?: number;
-}
-
-interface UpdateGroupDto {
-  group_name?: string;
-  description?: string;
-  order?: number;
-  is_active?: boolean;
-}
+import {
+  CreateGroupDto,
+  UpdateGroupDto,
+  InviteUserDto,
+  GetGroupsQueryDto,
+  SearchUserQueryDto,
+  GetLicenseUsageParamsDto,
+  ValidateGroupNameParamsDto,
+  ValidateGroupNameQueryDto,
+  ValidateAtlassianIdParamsDto,
+  ValidateAtlassianIdQueryDto,
+} from "./dto/atlassian.dto";
 
 @Controller("atlassian")
+@UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class AtlassianController {
   constructor(private readonly atlassianService: AtlassianService) {}
 
-  // ==================== CRUD GRUPOS ====================
+  // ==================== ENDPOINTS DE LICENÇAS ====================
+
+  /**
+   * ✅ GET /atlassian/licenses/usage/:product
+   * Consulta o uso de licenças para um produto específico
+   */
+  @Get("licenses/usage/:product")
+  async getLicenseUsage(@Param() params: GetLicenseUsageParamsDto) {
+    try {
+      const licenseData =
+        await this.atlassianService.getApproximateLicenseCount(params.product);
+
+      return {
+        success: true,
+        message: `Uso de licenças para ${params.product} consultado com sucesso`,
+        data: licenseData,
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || "Erro ao consultar uso de licenças",
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * ✅ GET /atlassian/licenses/usage
+   * Consulta o uso de licenças para Jira Service Desk (padrão)
+   */
+  @Get("licenses/usage")
+  async getDefaultLicenseUsage() {
+    try {
+      const licenseData =
+        await this.atlassianService.getApproximateLicenseCount(
+          "jira-servicedesk",
+        );
+
+      return {
+        success: true,
+        message: "Uso de licenças consultado com sucesso",
+        data: licenseData,
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || "Erro ao consultar uso de licenças",
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * ✅ GET /atlassian/licenses/detailed
+   * Consulta detalhada de licenças para múltiplos produtos
+   */
+  @Get("licenses/detailed")
+  async getDetailedLicenseUsage() {
+    try {
+      const licenseData = await this.atlassianService.getDetailedLicenseUsage();
+
+      return {
+        success: true,
+        message: "Uso detalhado de licenças consultado com sucesso",
+        data: licenseData,
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || "Erro ao consultar uso detalhado de licenças",
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // ==================== ENDPOINTS DE USUÁRIOS ====================
+
+  /**
+   * ✅ GET /atlassian/users/search
+   * Busca usuários no Atlassian
+   */
+  @Get("users/search")
+  async searchUser(@Query() queryDto: SearchUserQueryDto) {
+    try {
+      const userData = await this.atlassianService.searchAtlassianUser(
+        queryDto.query,
+      );
+
+      return {
+        success: true,
+        message: "Busca de usuário realizada com sucesso",
+        data: userData,
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || "Erro ao buscar usuário",
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * ✅ POST /atlassian/users/invite
+   * Convida usuário para o Atlassian
+   */
+  @Post("users/invite")
+  async inviteUser(@Body() inviteUserDto: InviteUserDto, @Req() req: Request) {
+    try {
+      const userId = req.headers["user-id"] as string;
+
+      if (!inviteUserDto.email) {
+        throw new HttpException("Email é obrigatório", HttpStatus.BAD_REQUEST);
+      }
+
+      const result = await this.atlassianService.inviteUser(
+        inviteUserDto.email,
+      );
+
+      return {
+        success: true,
+        message: `Convite enviado para ${inviteUserDto.email} com sucesso`,
+        data: result,
+      };
+    } catch (error) {
+      throw new HttpException(
+        error.message || "Erro ao enviar convite",
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // ==================== CRUD GRUPOS (EXISTENTE) ====================
 
   @Post("groups")
   async createGroup(
@@ -40,7 +169,6 @@ export class AtlassianController {
     @Req() req: Request,
   ) {
     try {
-      // TODO: Extrair userId do token de autenticação
       const userId = req.headers["user-id"] as string;
 
       if (!createGroupDto.group_id || !createGroupDto.group_name) {
@@ -69,87 +197,23 @@ export class AtlassianController {
   }
 
   @Get("groups")
-  async getAllGroups(
-    @Query("isActive") isActive?: string,
-    @Query("search") search?: string,
-    @Query("orderBy") orderBy?: "order" | "name" | "created_at",
-    @Query("orderDirection") orderDirection?: "asc" | "desc",
-    @Query("limit") limit?: string,
-    @Query("offset") offset?: string,
-  ) {
+  async getAllGroups(@Query() queryDto: GetGroupsQueryDto) {
     try {
       const filters = {
-        isActive: isActive !== undefined ? isActive === "true" : undefined,
-        search: search || undefined,
-        orderBy: orderBy || "order",
-        orderDirection: orderDirection || "asc",
-        limit: limit ? parseInt(limit) : 50,
-        offset: offset ? parseInt(offset) : 0,
+        isActive: queryDto.isActive,
+        search: queryDto.search,
+        orderBy: queryDto.orderBy || "order",
+        orderDirection: queryDto.orderDirection || "asc",
+        limit: queryDto.limit || 50,
+        offset: queryDto.offset || 0,
       };
 
       const result = await this.atlassianService.getAllGroups(filters);
 
       return {
         success: true,
-        message: "Grupos recuperados com sucesso",
-        data: result.groups,
-        pagination: result.pagination,
-      };
-    } catch (error) {
-      throw new HttpException(
-        error.message || "Erro interno do servidor",
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  @Get("groups/stats")
-  async getGroupStats() {
-    try {
-      const stats = await this.atlassianService.getGroupStats();
-
-      return {
-        success: true,
-        message: "Estatísticas recuperadas com sucesso",
-        data: stats,
-      };
-    } catch (error) {
-      throw new HttpException(
-        error.message || "Erro interno do servidor",
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  @Get("groups/select")
-  async getGroupsForSelect(@Query("activeOnly") activeOnly?: string) {
-    try {
-      const groups = await this.atlassianService.getGroupsForSelect(
-        activeOnly !== "false",
-      );
-
-      return {
-        success: true,
-        message: "Lista de grupos para seleção",
-        data: groups,
-      };
-    } catch (error) {
-      throw new HttpException(
-        error.message || "Erro interno do servidor",
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  @Get("groups/:id")
-  async getGroupById(@Param("id") id: string) {
-    try {
-      const group = await this.atlassianService.getGroupById(id);
-
-      return {
-        success: true,
-        message: "Grupo encontrado com sucesso",
-        data: group,
+        message: "Grupos encontrados com sucesso",
+        ...result,
       };
     } catch (error) {
       throw new HttpException(
@@ -159,10 +223,10 @@ export class AtlassianController {
     }
   }
 
-  @Get("groups/atlassian/:groupId")
-  async getGroupByAtlassianId(@Param("groupId") groupId: string) {
+  @Get("groups/:id")
+  async getGroupById(@Param("id") id: string) {
     try {
-      const group = await this.atlassianService.getGroupByAtlassianId(groupId);
+      const group = await this.atlassianService.getGroupById(id);
 
       return {
         success: true,
@@ -250,13 +314,13 @@ export class AtlassianController {
 
   @Get("groups/validate/name/:name")
   async validateGroupName(
-    @Param("name") name: string,
-    @Query("excludeId") excludeId?: string,
+    @Param() params: ValidateGroupNameParamsDto,
+    @Query() queryDto: ValidateGroupNameQueryDto,
   ) {
     try {
       const result = await this.atlassianService.validateGroupName(
-        name,
-        excludeId,
+        params.name,
+        queryDto.excludeId,
       );
 
       return {
@@ -273,13 +337,13 @@ export class AtlassianController {
 
   @Get("groups/validate/atlassian-id/:groupId")
   async validateAtlassianId(
-    @Param("groupId") groupId: string,
-    @Query("excludeId") excludeId?: string,
+    @Param() params: ValidateAtlassianIdParamsDto,
+    @Query() queryDto: ValidateAtlassianIdQueryDto,
   ) {
     try {
       const result = await this.atlassianService.validateAtlassianId(
-        groupId,
-        excludeId,
+        params.groupId,
+        queryDto.excludeId,
       );
 
       return {
