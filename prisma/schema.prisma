@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url  	    = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  ms_id         String   @unique
+  name          String
+  email         String
+  profile_image String?
+  is_active     Boolean
+  last_login    DateTime @default(now())
+  updated_at    DateTime @default(now())
+  created_at    DateTime @default(now())
+
+  role_id       String   @db.Uuid
+  role          Role     @relation(fields: [role_id], references: [id])
+
+  Log           Log[]
+  AtlassianLog  AtlassianLog[]
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  role        String
+  description String
+  created_at  DateTime @default(now())
+
+  users       User[]
+}
+
+model Log {
+  id            String   @id @default(uuid()) @db.Uuid
+  user_id       String?  @db.Uuid 
+  customer      String
+  item_name     String
+  action        String
+  response      String
+  ip_address    String
+  created_at    DateTime @default(now())
+
+  user        User?     @relation(fields: [user_id], references: [id])
+}
+
+model Onboarding {
+  id                  String   @id @default(uuid()) @db.Uuid
+  issue_key           String
+  issue_id            Int
+  full_name           String
+  user_name           String
+  email               String
+  password            String
+  description         String
+  department          String
+  organizational_unit String
+  city                String
+  state               String
+  country             String
+  status              String
+  error_message       String?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+}
+
+model Offboarding {
+  id                  String   @id @default(uuid()) @db.Uuid
+  issue_key           String
+  issue_id            Int
+  full_name           String
+  user_name           String
+  email               String
+  password            String
+  description         String
+  department          String
+  organizational_unit String
+  city                String
+  state               String
+  country             String
+  status              String
+  error_message       String?
+  deactivated_at      DateTime @default(now())
+}
+
+model AtlassianGroup {
+  id          String   @id @default(uuid()) @db.Uuid
+  group_id    String   @unique
+  group_name  String
+  description String?
+  order       Int?
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  users       AtlassianGroupUser[]
+  logs        AtlassianLog[]
+
+  @@map("atlassian_groups")
+}
+
+model AtlassianGroupUser {
+  id           String   @id @default(uuid()) @db.Uuid
+  group_id     String   @db.Uuid
+  account_id   String
+  email        String
+  display_name String?
+  added_at     DateTime @default(now())
+  added_by     String?
+
+  group        AtlassianGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@unique([group_id, account_id])
+  @@map("atlassian_group_users")
+}
+
+model AtlassianUser {
+  id            String   @id @default(uuid()) @db.Uuid
+  account_id    String   @unique
+  email         String   @unique
+  display_name  String
+  account_type  String
+  is_active     Boolean  @default(true)
+  is_suspended  Boolean  @default(false)
+  avatar_url    String?
+  last_sync     DateTime @default(now())
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  logs          AtlassianLog[]
+
+  @@map("atlassian_users")
+}
+
+model AtlassianLog {
+  id                String   @id @default(uuid()) @db.Uuid
+  user_id           String?  @db.Uuid
+  group_id          String?  @db.Uuid
+  atlassian_user_id String?  @db.Uuid 
+  action            String   // INVITE, ASSIGN, SUSPEND, REACTIVATE, CREATE_GROUP
+  target_email      String?
+  target_account_id String?
+  status            String   // SUCCESS, ERROR, PENDING
+  error_message     String?
+  ip_address        String?
+  user_agent        String?
+  request_data      Json?
+  response_data     Json?
+  created_at        DateTime @default(now())
+
+  user              User?           @relation(fields: [user_id], references: [id])
+  group             AtlassianGroup? @relation(fields: [group_id], references: [id])
+  atlassian_user    AtlassianUser?  @relation(fields: [atlassian_user_id], references: [id])
+
+  @@map("atlassian_logs")
+}
